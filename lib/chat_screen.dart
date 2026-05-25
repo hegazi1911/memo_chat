@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -117,12 +118,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
         setState(() => _isUploadingImage = true);
 
-        // Upload to Firebase Storage
+        // Upload to Firebase Storage with a 25-second timeout
         final imageUrl = await chatService.uploadChatImage(
           _activeRoomId,
           file.name,
           file.bytes!,
-        );
+        ).timeout(const Duration(seconds: 25), onTimeout: () {
+          throw TimeoutException(
+            'Upload timed out. Please check your Firebase Storage Rules, CORS configurations, and internet connection.'
+          );
+        });
 
         // Send the image message
         await chatService.sendMessage(
