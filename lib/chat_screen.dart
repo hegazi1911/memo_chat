@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import 'chat_service.dart';
 import 'theme_provider.dart';
 import 'models.dart';
@@ -34,6 +35,9 @@ class _ChatScreenState extends State<ChatScreen> {
   // Typing status management
   bool _isTyping = false;
   DateTime? _lastTypingTime;
+
+  // Image upload loading state
+  bool _isUploadingImage = false;
 
   @override
   void dispose() {
@@ -86,6 +90,64 @@ class _ChatScreenState extends State<ChatScreen> {
       _isTyping = false;
       _replyingTo = null;
     });
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final chatService = Provider.of<ChatService>(context, listen: false);
+    
+    try {
+      // Direct call to FilePicker.pickFiles static method in v11.x
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        withData: true, // Crucial for Flutter Web to get file bytes!
+      );
+
+      if (result != null && result.files.first.bytes != null) {
+        final file = result.files.first;
+        
+        // Size warning for large files > 10MB
+        if (file.size > 10 * 1024 * 1024) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Uploading large image. This might take a few moments...'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        setState(() => _isUploadingImage = true);
+
+        // Upload to Firebase Storage
+        final imageUrl = await chatService.uploadChatImage(
+          _activeRoomId,
+          file.name,
+          file.bytes!,
+        );
+
+        // Send the image message
+        await chatService.sendMessage(
+          roomId: _activeRoomId,
+          text: '[Sent an image]',
+          imageUrl: imageUrl,
+          replyToId: _replyingTo?.id,
+          replyToText: _replyingTo?.text,
+          replyToName: _replyingTo?.senderName,
+        );
+
+        setState(() {
+          _isUploadingImage = false;
+          _replyingTo = null;
+        });
+      }
+    } catch (e) {
+      setState(() => _isUploadingImage = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error uploading image: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Color _parseHexColor(String hex) {
@@ -603,6 +665,19 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             child: Row(
               children: [
+                // Image Picking Button
+                IconButton(
+                  icon: _isUploadingImage
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white70)),
+                        )
+                      : Icon(Icons.image_outlined, color: theme.colorScheme.secondary),
+                  tooltip: 'Attach Image',
+                  onPressed: _isUploadingImage ? null : _pickAndUploadImage,
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
@@ -758,11 +833,62 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ],
                 ),
-                child: Text(
-                  message.text,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: isMe ? Colors.white : theme.colorScheme.onSurface,
-                  ),
+                child: Column(
+                  crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  children: [
+                    // Render Image if present
+                    if (message.imageUrl != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            message.imageUrl!,
+                            width: 320,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                width: 320,
+                                height: 180,
+                                color: Colors.black.withOpacity(0.15),
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                padding: const EdgeInsets.all(8),
+                                color: Colors.black12,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.error_outline, color: Colors.redAccent, size: 16),
+                                    SizedBox(width: 6),
+                                    Text('Error loading image', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    // Render Text if it's not the default image fallback, or has user text
+                    if (message.imageUrl == null || message.text != '[Sent an image]') ...[
+                      Text(
+                        message.text,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: isMe ? Colors.white : theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -868,7 +994,7 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

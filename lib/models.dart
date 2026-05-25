@@ -10,6 +10,7 @@ class ChatMessage {
   final String? replyToId;
   final String? replyToText;
   final String? replyToName;
+  final String? imageUrl; // Added for image support
 
   ChatMessage({
     required this.id,
@@ -21,6 +22,7 @@ class ChatMessage {
     this.replyToId,
     this.replyToText,
     this.replyToName,
+    this.imageUrl,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -54,6 +56,7 @@ class ChatMessage {
       replyToId: data['replyToId'],
       replyToText: data['replyToText'],
       replyToName: data['replyToName'],
+      imageUrl: data['imageUrl'], // Parsed safely
     );
   }
 
@@ -67,6 +70,7 @@ class ChatMessage {
       if (replyToId != null) 'replyToId': replyToId,
       if (replyToText != null) 'replyToText': replyToText,
       if (replyToName != null) 'replyToName': replyToName,
+      if (imageUrl != null) 'imageUrl': imageUrl, // Saved safely
     };
   }
 }

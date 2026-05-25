@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data' show Uint8List;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'models.dart';
 
@@ -11,9 +13,6 @@ class ChatService extends ChangeNotifier {
   User? _currentUser;
   UserProfile? _userProfile;
   StreamSubscription<DocumentSnapshot>? _profileSubscription;
-  
-  // Keep track of active room's typing users
-  final Map<String, List<String>> _typingUsers = {};
 
   User? get currentUser => _currentUser;
   UserProfile? get userProfile => _userProfile;
@@ -177,6 +176,7 @@ class ChatService extends ChangeNotifier {
     String? replyToId,
     String? replyToText,
     String? replyToName,
+    String? imageUrl, // Added image URL support
   }) async {
     if (_currentUser == null || _userProfile == null) return;
     
@@ -190,6 +190,7 @@ class ChatService extends ChangeNotifier {
       replyToId: replyToId,
       replyToText: replyToText,
       replyToName: replyToName,
+      imageUrl: imageUrl,
     );
 
     // Stop typing when message is sent
@@ -229,6 +230,31 @@ class ChatService extends ChangeNotifier {
 
       transaction.update(docRef, {'reactions': reactions});
     });
+  }
+
+  // --- Firebase Storage Image Upload ---
+
+  Future<String> uploadChatImage(String roomId, String fileName, Uint8List fileBytes) async {
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('chat_images')
+          .child('rooms')
+          .child(roomId)
+          .child('${DateTime.now().millisecondsSinceEpoch}_$fileName');
+
+      // Upload raw bytes, set content type so browsers display it directly instead of downloading
+      final uploadTask = await ref.putData(
+        fileBytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error uploading image to storage: $e');
+      rethrow;
+    }
   }
 
   // --- Typing Indicator & Online Presence ---
